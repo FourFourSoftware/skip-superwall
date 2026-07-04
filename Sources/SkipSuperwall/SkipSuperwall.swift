@@ -7,6 +7,12 @@ import SuperwallKit
 #else
 import android.app.Application
 import com.superwall.sdk.Superwall
+// `register`, `identify`, and `setUserAttributes` are top-level Kotlin
+// extension functions on `Superwall` (not members), so each must be imported by
+// name for the call site to resolve.
+import com.superwall.sdk.paywall.presentation.register
+import com.superwall.sdk.identity.identify
+import com.superwall.sdk.identity.setUserAttributes
 #endif
 
 // MARK: - SuperwallManager
@@ -73,8 +79,9 @@ public struct SuperwallManager: @unchecked Sendable {
         #endif
         #else
         // `.kotlin()` bridges Skip's `Dictionary` to a `kotlin.collections.Map`,
-        // which is what Superwall's `register(params:)` expects.
-        Superwall.instance.register(placement: placement, params: params?.kotlin(), feature: feature)
+        // but yields a star-projected `MutableMap<*, *>`; cast to the
+        // `Map<String, Any>` that Superwall's `register(params:)` expects.
+        Superwall.instance.register(placement: placement, params: params?.kotlin() as? Map<String, Any>, feature: feature)
         #endif
     }
 
@@ -100,7 +107,7 @@ public struct SuperwallManager: @unchecked Sendable {
         Superwall.shared.setUserAttributes(anyAttributes)
         #endif
         #else
-        Superwall.instance.setUserAttributes(attributes.kotlin())
+        Superwall.instance.setUserAttributes(attributes.kotlin() as Map<String, Any>)
         #endif
     }
 
