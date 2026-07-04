@@ -1,18 +1,34 @@
 #if !SKIP_BRIDGE
 import Foundation
+import SwiftUI // for `UIApplication.shared.androidActivity` on Android
 #if !SKIP
 #if canImport(SuperwallKit)
 import SuperwallKit
 #endif
 #else
 import android.app.Application
+import android.app.Activity
 import com.superwall.sdk.Superwall
-// `register`, `identify`, and `setUserAttributes` are top-level Kotlin
-// extension functions on `Superwall` (not members), so each must be imported by
-// name for the call site to resolve.
+import com.superwall.sdk.misc.ActivityProvider
+// register/identify/setUserAttributes are top-level extension functions, so
+// each is imported by name.
 import com.superwall.sdk.paywall.presentation.register
 import com.superwall.sdk.identity.identify
 import com.superwall.sdk.identity.setUserAttributes
+#endif
+
+#if SKIP
+/// Supplies Superwall with the current Android `Activity`. `configure` runs from
+/// SwiftUI's launch task, after the host activity has resumed, so Superwall's own
+/// lifecycle tracking misses it ("Current Activity is null"); SkipUI holds the
+/// live reference instead.
+final class SkipSuperwallActivityProvider: ActivityProvider {
+    // `override` is emitted only for Android (skipstone can't infer it from the
+    // external Kotlin interface); this block never reaches the Swift compiler.
+    public override func getCurrentActivity() -> Activity? {
+        UIApplication.shared.androidActivity
+    }
+}
 #endif
 
 // MARK: - SuperwallManager
@@ -55,11 +71,11 @@ public struct SuperwallManager: @unchecked Sendable {
         Superwall.configure(apiKey: apiKey)
         #endif
         #else
-        // Superwall's Android `configure` requires an `Application`, not just a
-        // `Context`; `applicationContext` is the process-wide Application.
+        // Android `configure` needs an `Application` and an activity provider (see
+        // SkipSuperwallActivityProvider). The two nils are purchaseController/options.
         let context = ProcessInfo.processInfo.androidContext
         let application = context.applicationContext as! Application
-        Superwall.configure(application, apiKey)
+        Superwall.configure(application, apiKey, nil, nil, SkipSuperwallActivityProvider())
         #endif
     }
 
@@ -78,9 +94,8 @@ public struct SuperwallManager: @unchecked Sendable {
         Superwall.shared.register(placement: placement, params: anyParams, feature: feature)
         #endif
         #else
-        // `.kotlin()` bridges Skip's `Dictionary` to a `kotlin.collections.Map`,
-        // but yields a star-projected `MutableMap<*, *>`; cast to the
-        // `Map<String, Any>` that Superwall's `register(params:)` expects.
+        // `.kotlin()` yields a star-projected map; cast to the `Map<String, Any>`
+        // that `register(params:)` expects.
         Superwall.instance.register(placement: placement, params: params?.kotlin() as? Map<String, Any>, feature: feature)
         #endif
     }
