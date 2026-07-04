@@ -1,0 +1,17 @@
+# Configuration file for https://skip.tools project
+#
+# Kotlin dependencies and Gradle build options for this module are configured
+# here. Mirrors the skip-crisp / skip-revenue / skip-firebase approach: the
+# transpiled Kotlin sources reference `com.superwall.sdk.*`, which is provided
+# by the Superwall Android SDK Maven artifact declared below.
+
+skip:
+  bridging: true
+
+build:
+  contents:
+    # Superwall Android SDK (Maven Central). Versions independently from the
+    # iOS SDK (SuperwallKit tracks the 4.x line; Android tracks 2.x).
+    - block: 'dependencies'
+      contents:
+        - 'implementation("com.superwall.sdk:superwall-android:2.7.20")'
