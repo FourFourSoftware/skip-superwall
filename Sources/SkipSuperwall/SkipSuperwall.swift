@@ -22,6 +22,13 @@ import com.superwall.sdk.identity.setUserAttributes
 /// SwiftUI's launch task, after the host activity has resumed, so Superwall's own
 /// lifecycle tracking misses it ("Current Activity is null"); SkipUI holds the
 /// live reference instead.
+///
+/// `// SKIP @nobridge`: this is an Android-internal helper (its
+/// `getCurrentActivity()` returns the Android `Activity` type), never called
+/// from Swift, so it must be excluded from skip-fuse's bridge generation —
+/// otherwise the generator errors with "'Activity' does not appear to be a
+/// bridged type".
+// SKIP @nobridge
 final class SkipSuperwallActivityProvider: ActivityProvider {
     // `override` is emitted only for Android (skipstone can't infer it from the
     // external Kotlin interface); this block never reaches the Swift compiler.

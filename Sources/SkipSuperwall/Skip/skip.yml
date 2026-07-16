@@ -6,6 +6,7 @@
 # by the Superwall Android SDK Maven artifact declared below.
 
 skip:
+  mode: 'transpiled'
   bridging: true
 
 build:
