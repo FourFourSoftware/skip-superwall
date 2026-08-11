@@ -58,8 +58,3 @@ Confirmed against real iOS (Xcode) and Android (Gradle) builds:
   `com.superwall.sdk:superwall-android:2.7.20`) — the `com.superwall.sdk.Superwall`
   symbols match (`configure`, `instance.register`, `identify`,
   `setUserAttributes`, `reset`).
-
-Not yet wired: subscription-status control (`Superwall.shared.subscriptionStatus`)
-and a custom `PurchaseController` — the SDK's default automatic purchase handling
-is used. Add these when integrating with your app's entitlements system
-(e.g. RevenueCat).
