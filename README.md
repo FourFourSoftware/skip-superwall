@@ -48,18 +48,18 @@ declare Superwall's paywall activity (per the Superwall Android quickstart):
     android:configChanges="orientation|screenSize|keyboardHidden" />
 ```
 
-## Verification notes
+## Verified
 
-The following must be confirmed against real iOS (Xcode) and Android (Gradle)
-builds — they can't be validated on the CLI Swift toolchain:
+Confirmed against real iOS (Xcode) and Android (Gradle) builds:
 
-- The SuperwallKit iOS SPM product name (`SuperwallKit`) and version
-  (`Package.swift`, `from: 4.0.0`).
-- The Superwall Android Maven coordinate/version (`Skip/skip.yml`,
-  `com.superwall.sdk:superwall-android:2.7.20`) and that the
-  `com.superwall.sdk.Superwall` symbols match (`configure`, `instance.register`,
-  `identify`, `setUserAttributes`, `reset`).
-- Subscription-status control (`Superwall.shared.subscriptionStatus`) and a
-  custom `PurchaseController` are intentionally **not** wired here yet — the
-  default automatic purchase handling is used. Add them when integrating with
-  the app's RevenueCat entitlements.
+- The SuperwallKit iOS SPM product (`SuperwallKit`, `Package.swift`,
+  `from: 4.0.0`).
+- The Superwall Android Maven artifact (`Skip/skip.yml`,
+  `com.superwall.sdk:superwall-android:2.7.20`) — the `com.superwall.sdk.Superwall`
+  symbols match (`configure`, `instance.register`, `identify`,
+  `setUserAttributes`, `reset`).
+
+Not yet wired: subscription-status control (`Superwall.shared.subscriptionStatus`)
+and a custom `PurchaseController` — the SDK's default automatic purchase handling
+is used. Add these when integrating with your app's entitlements system
+(e.g. RevenueCat).
