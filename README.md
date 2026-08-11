@@ -5,6 +5,9 @@ A cross-platform [Skip](https://skip.tools) wrapper around the native
 remotely-configured paywalls on both iOS and Android — in the same style as
 `skip-crisp`, `skip-firebase`, and `skip-revenue`.
 
+> **Note:** this repo will likely move under the [skiptools](https://github.com/skiptools)
+> org in the future.
+
 - **iOS / macOS** → `SuperwallKit` (`import SuperwallKit`): `Superwall.configure`,
   `Superwall.shared.register`, `identify`, `setUserAttributes`, `reset`.
 - **Android** → the `com.superwall.sdk:superwall-android` Maven artifact
