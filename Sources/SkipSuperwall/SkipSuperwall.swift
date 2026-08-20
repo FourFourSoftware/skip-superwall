@@ -1,5 +1,6 @@
 #if !SKIP_BRIDGE
 import Foundation
+import OSLog
 import SwiftUI // for `UIApplication.shared.androidActivity` on Android
 #if !SKIP
 #if canImport(SuperwallKit)
@@ -38,6 +39,8 @@ final class SkipSuperwallActivityProvider: ActivityProvider {
 }
 #endif
 
+let logger: Logger = Logger(subsystem: "skip.superwall", category: "SuperwallManager")
+
 // MARK: - SuperwallManager
 
 /// Cross-platform wrapper around the native Superwall paywall SDKs.
@@ -69,10 +72,33 @@ public struct SuperwallManager: @unchecked Sendable {
 
     private init() {}
 
+    /// `true` once the underlying native SDK has been configured.
+    ///
+    /// Every lifecycle and presentation call below is gated on this: on Android
+    /// the SDK's `Superwall.instance` accessor throws `IllegalStateException`
+    /// when unconfigured, which the generated skip-fuse bridge (`try!`) turns
+    /// into an unrecoverable process crash (LIV-895). Unconfigured calls must
+    /// therefore degrade to safe no-ops inside the wrapper.
+    public var isConfigured: Bool {
+        #if !SKIP
+        #if canImport(SuperwallKit)
+        return Superwall.isInitialized
+        #else
+        return false
+        #endif
+        #else
+        return Superwall.initialized
+        #endif
+    }
+
     /// Configure Superwall with the public API key from the dashboard.
-    /// Idempotent-ish — call once early in app launch, before any
-    /// ``register(placement:params:feature:)``.
+    /// Idempotent — a second call is ignored. Call once early in app launch,
+    /// before any ``register(placement:params:feature:)``.
     public func configure(apiKey: String) {
+        guard !isConfigured else {
+            logger.info("configure skipped — Superwall is already configured")
+            return
+        }
         #if !SKIP
         #if canImport(SuperwallKit)
         Superwall.configure(apiKey: apiKey)
@@ -91,10 +117,16 @@ public struct SuperwallManager: @unchecked Sendable {
     /// `feature` block. `feature` runs immediately when the user is already
     /// entitled (or after a successful purchase/restore); it is skipped if the
     /// user dismisses a gating paywall.
+    /// If Superwall is unconfigured this is a no-op: no paywall is shown and
+    /// `feature` does NOT run (running it would silently grant entitlement).
     @MainActor
     public func register(placement: String,
                          params: [String: String]? = nil,
                          feature: @escaping () -> Void = {}) {
+        guard isConfigured else {
+            logger.warning("register(\(placement)) skipped — Superwall is not configured")
+            return
+        }
         #if !SKIP
         #if canImport(SuperwallKit)
         let anyParams: [String: Any]? = params
@@ -111,6 +143,10 @@ public struct SuperwallManager: @unchecked Sendable {
     /// user's assigned paywalls and attributes follow them across devices.
     /// Call as soon as you have a stable user identity (e.g. after sign-in).
     public func identify(userID: String) {
+        guard isConfigured else {
+            logger.warning("identify skipped — Superwall is not configured")
+            return
+        }
         #if !SKIP
         #if canImport(SuperwallKit)
         Superwall.shared.identify(userId: userID)
@@ -123,6 +159,10 @@ public struct SuperwallManager: @unchecked Sendable {
     /// Set user attributes for audience filtering / analytics on the dashboard.
     /// Existing attributes are overwritten; others are left untouched.
     public func setUserAttributes(_ attributes: [String: String]) {
+        guard isConfigured else {
+            logger.warning("setUserAttributes skipped — Superwall is not configured")
+            return
+        }
         #if !SKIP
         #if canImport(SuperwallKit)
         let anyAttributes: [String: Any] = attributes
@@ -136,6 +176,10 @@ public struct SuperwallManager: @unchecked Sendable {
     /// Reset the on-device Superwall user (identity, attributes, assignments).
     /// Call on sign-out so the next user doesn't inherit the previous session.
     public func reset() {
+        guard isConfigured else {
+            logger.warning("reset skipped — Superwall is not configured")
+            return
+        }
         #if !SKIP
         #if canImport(SuperwallKit)
         Superwall.shared.reset()
