@@ -24,11 +24,8 @@ import com.superwall.sdk.identity.setUserAttributes
 /// lifecycle tracking misses it ("Current Activity is null"); SkipUI holds the
 /// live reference instead.
 ///
-/// `// SKIP @nobridge`: this is an Android-internal helper (its
-/// `getCurrentActivity()` returns the Android `Activity` type), never called
-/// from Swift, so it must be excluded from skip-fuse's bridge generation —
-/// otherwise the generator errors with "'Activity' does not appear to be a
-/// bridged type".
+/// `// SKIP @nobridge`: Android-internal and never called from Swift; excluded
+/// from bridge generation because skip-fuse can't bridge the `Activity` type.
 // SKIP @nobridge
 final class SkipSuperwallActivityProvider: ActivityProvider {
     // `override` is emitted only for Android (skipstone can't infer it from the
@@ -74,11 +71,9 @@ public struct SuperwallManager: @unchecked Sendable {
 
     /// `true` once the underlying native SDK has been configured.
     ///
-    /// Every lifecycle and presentation call below is gated on this: on Android
-    /// the SDK's `Superwall.instance` accessor throws `IllegalStateException`
-    /// when unconfigured, which the generated skip-fuse bridge (`try!`) turns
-    /// into an unrecoverable process crash (LIV-895). Unconfigured calls must
-    /// therefore degrade to safe no-ops inside the wrapper.
+    /// All calls below are gated on this: on Android, `Superwall.instance`
+    /// throws when unconfigured, and the generated bridge's `try!` escalates
+    /// that to a fatal crash — so unconfigured calls become safe no-ops here.
     public var isConfigured: Bool {
         #if !SKIP
         #if canImport(SuperwallKit)
@@ -117,8 +112,8 @@ public struct SuperwallManager: @unchecked Sendable {
     /// `feature` block. `feature` runs immediately when the user is already
     /// entitled (or after a successful purchase/restore); it is skipped if the
     /// user dismisses a gating paywall.
-    /// If Superwall is unconfigured this is a no-op: no paywall is shown and
-    /// `feature` does NOT run (running it would silently grant entitlement).
+    /// While unconfigured this is a no-op: no paywall is shown and `feature`
+    /// does not run (that would silently grant entitlement).
     @MainActor
     public func register(placement: String,
                          params: [String: String]? = nil,

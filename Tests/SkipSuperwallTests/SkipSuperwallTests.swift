@@ -11,11 +11,8 @@ final class SkipSuperwallTests: XCTestCase {
         XCTAssertTrue(type(of: a) == type(of: b))
     }
 
-    /// LIV-895: before `configure(apiKey:)` runs, every lifecycle and
-    /// presentation call must be a safe no-op. On Android, touching the SDK
-    /// while unconfigured throws `IllegalStateException`, which the generated
-    /// bridge escalates to a fatal `try!` crash — so these calls may never
-    /// reach the SDK.
+    /// Before `configure(apiKey:)` runs, every call must be a safe no-op —
+    /// on Android an unconfigured SDK call would crash via the bridge's `try!`.
     @MainActor
     func testUnconfiguredLifecycleCallsAreSafeNoOps() {
         let manager = SuperwallManager.shared
