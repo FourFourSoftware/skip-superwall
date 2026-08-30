@@ -1,5 +1,6 @@
 #if !SKIP_BRIDGE
 import Foundation
+import OSLog
 import SwiftUI // for `UIApplication.shared.androidActivity` on Android
 #if !SKIP
 #if canImport(SuperwallKit)
@@ -23,11 +24,8 @@ import com.superwall.sdk.identity.setUserAttributes
 /// lifecycle tracking misses it ("Current Activity is null"); SkipUI holds the
 /// live reference instead.
 ///
-/// `// SKIP @nobridge`: this is an Android-internal helper (its
-/// `getCurrentActivity()` returns the Android `Activity` type), never called
-/// from Swift, so it must be excluded from skip-fuse's bridge generation —
-/// otherwise the generator errors with "'Activity' does not appear to be a
-/// bridged type".
+/// `// SKIP @nobridge`: Android-internal and never called from Swift; excluded
+/// from bridge generation because skip-fuse can't bridge the `Activity` type.
 // SKIP @nobridge
 final class SkipSuperwallActivityProvider: ActivityProvider {
     // `override` is emitted only for Android (skipstone can't infer it from the
@@ -37,6 +35,8 @@ final class SkipSuperwallActivityProvider: ActivityProvider {
     }
 }
 #endif
+
+let logger: Logger = Logger(subsystem: "skip.superwall", category: "SuperwallManager")
 
 // MARK: - SuperwallManager
 
@@ -69,10 +69,31 @@ public struct SuperwallManager: @unchecked Sendable {
 
     private init() {}
 
+    /// `true` once the underlying native SDK has been configured.
+    ///
+    /// All calls below are gated on this: on Android, `Superwall.instance`
+    /// throws when unconfigured, and the generated bridge's `try!` escalates
+    /// that to a fatal crash — so unconfigured calls become safe no-ops here.
+    public var isConfigured: Bool {
+        #if !SKIP
+        #if canImport(SuperwallKit)
+        return Superwall.isInitialized
+        #else
+        return false
+        #endif
+        #else
+        return Superwall.initialized
+        #endif
+    }
+
     /// Configure Superwall with the public API key from the dashboard.
-    /// Idempotent-ish — call once early in app launch, before any
-    /// ``register(placement:params:feature:)``.
+    /// Idempotent — a second call is ignored. Call once early in app launch,
+    /// before any ``register(placement:params:feature:)``.
     public func configure(apiKey: String) {
+        guard !isConfigured else {
+            logger.info("configure skipped — Superwall is already configured")
+            return
+        }
         #if !SKIP
         #if canImport(SuperwallKit)
         Superwall.configure(apiKey: apiKey)
@@ -91,10 +112,16 @@ public struct SuperwallManager: @unchecked Sendable {
     /// `feature` block. `feature` runs immediately when the user is already
     /// entitled (or after a successful purchase/restore); it is skipped if the
     /// user dismisses a gating paywall.
+    /// While unconfigured this is a no-op: no paywall is shown and `feature`
+    /// does not run (that would silently grant entitlement).
     @MainActor
     public func register(placement: String,
                          params: [String: String]? = nil,
                          feature: @escaping () -> Void = {}) {
+        guard isConfigured else {
+            logger.warning("register(\(placement)) skipped — Superwall is not configured")
+            return
+        }
         #if !SKIP
         #if canImport(SuperwallKit)
         let anyParams: [String: Any]? = params
@@ -111,6 +138,10 @@ public struct SuperwallManager: @unchecked Sendable {
     /// user's assigned paywalls and attributes follow them across devices.
     /// Call as soon as you have a stable user identity (e.g. after sign-in).
     public func identify(userID: String) {
+        guard isConfigured else {
+            logger.warning("identify skipped — Superwall is not configured")
+            return
+        }
         #if !SKIP
         #if canImport(SuperwallKit)
         Superwall.shared.identify(userId: userID)
@@ -123,6 +154,10 @@ public struct SuperwallManager: @unchecked Sendable {
     /// Set user attributes for audience filtering / analytics on the dashboard.
     /// Existing attributes are overwritten; others are left untouched.
     public func setUserAttributes(_ attributes: [String: String]) {
+        guard isConfigured else {
+            logger.warning("setUserAttributes skipped — Superwall is not configured")
+            return
+        }
         #if !SKIP
         #if canImport(SuperwallKit)
         let anyAttributes: [String: Any] = attributes
@@ -136,6 +171,10 @@ public struct SuperwallManager: @unchecked Sendable {
     /// Reset the on-device Superwall user (identity, attributes, assignments).
     /// Call on sign-out so the next user doesn't inherit the previous session.
     public func reset() {
+        guard isConfigured else {
+            logger.warning("reset skipped — Superwall is not configured")
+            return
+        }
         #if !SKIP
         #if canImport(SuperwallKit)
         Superwall.shared.reset()
