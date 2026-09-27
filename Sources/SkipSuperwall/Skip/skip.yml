@@ -16,3 +16,10 @@ build:
     - block: 'dependencies'
       contents:
         - 'implementation("com.superwall.sdk:superwall-android:2.7.20")'
+        # The PurchaseController interface exposes billingclient's ProductDetails,
+        # but superwall-android declares billing as `implementation` (runtime-only
+        # for consumers), so the type must be added to our compile classpath
+        # explicitly. compileOnly: the runtime copy still arrives transitively
+        # from superwall-android, avoiding a second pinned version. 8.0.0 is the
+        # version superwall-android 2.7.20 ships against.
+        - 'compileOnly("com.android.billingclient:billing:8.0.0")'
