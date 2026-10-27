@@ -32,6 +32,12 @@ SuperwallManager.shared.register(placement:params:feature:)    // @MainActor
 SuperwallManager.shared.reset()                                // on sign-out
 ```
 
+On native macOS, `register` uses the dashboard's presentation style, so a
+Fullscreen paywall covers the whole window. To show it as a sheet instead,
+present `SuperwallPaywallSheet(placement:params:onDismiss:onEntitled:)` in the
+app's own `.sheet` (macOS only; `onEntitled` follows `register`'s `feature`
+semantics).
+
 Superwall presents its own paywalls (a dedicated window on iOS, a
 `SuperwallPaywallActivity` on Android), so `register` needs no host view
 controller. With no `PurchaseController` passed to `configure`, Superwall
