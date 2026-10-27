@@ -16,6 +16,13 @@ import com.superwall.sdk.misc.ActivityProvider
 import com.superwall.sdk.paywall.presentation.register
 import com.superwall.sdk.identity.identify
 import com.superwall.sdk.identity.setUserAttributes
+import com.superwall.sdk.delegate.PurchaseResult
+import com.superwall.sdk.delegate.RestorationResult
+import com.superwall.sdk.delegate.subscription_controller.PurchaseController
+import com.superwall.sdk.models.entitlements.Entitlement
+import com.superwall.sdk.models.entitlements.SubscriptionStatus
+import com.android.billingclient.api.ProductDetails
+import java.util.LinkedHashSet
 #endif
 
 #if SKIP
@@ -38,6 +45,126 @@ final class SkipSuperwallActivityProvider: ActivityProvider {
 
 let logger: Logger = Logger(subsystem: "skip.superwall", category: "SuperwallManager")
 
+// MARK: - Purchase controller surface
+
+/// Cross-platform outcome of an app-implemented purchase, mirroring
+/// react-native-superwall's `PurchaseResult`. Raw values are stable so the
+/// outcome can round-trip across the bridge as an integer if ever needed:
+/// 0 purchased, 1 restored, 2 cancelled, 3 pending, 4 failed.
+public enum SuperwallPurchaseOutcome: Int, Sendable {
+    case purchased = 0
+    case restored = 1
+    case cancelled = 2
+    case pending = 3
+    case failed = 4
+}
+
+/// Holds the handlers registered via
+/// ``SuperwallManager/setPurchaseController(purchaseFromAppStore:purchaseFromGooglePlay:restorePurchases:)``
+/// until ``SuperwallManager/configure(apiKey:)`` runs — both native SDKs only
+/// accept a purchase controller at configure time.
+// SKIP @nobridge
+final class SuperwallPurchaseHandlers: @unchecked Sendable {
+    static let shared = SuperwallPurchaseHandlers()
+
+    private init() {}
+
+    var purchaseFromAppStore: ((String) async -> SuperwallPurchaseOutcome)?
+    var purchaseFromGooglePlay: ((String, String?, String?) async -> SuperwallPurchaseOutcome)?
+    var restorePurchases: (() async -> Bool)?
+
+    var isRegistered: Bool {
+        purchaseFromAppStore != nil && purchaseFromGooglePlay != nil && restorePurchases != nil
+    }
+}
+
+#if !SKIP
+#if canImport(SuperwallKit)
+/// Adapts the app-registered primitive-typed handlers to SuperwallKit's
+/// `PurchaseController`. Installed by `configure(apiKey:)` when handlers were
+/// registered beforehand; SuperwallKit retains it for the app's lifetime.
+final class AppPurchaseControllerAdapter: PurchaseController {
+    private let purchaseHandler: (String) async -> SuperwallPurchaseOutcome
+    private let restoreHandler: () async -> Bool
+
+    init(purchaseHandler: @escaping (String) async -> SuperwallPurchaseOutcome,
+         restoreHandler: @escaping () async -> Bool) {
+        self.purchaseHandler = purchaseHandler
+        self.restoreHandler = restoreHandler
+    }
+
+    @MainActor
+    func purchase(product: StoreProduct) async -> PurchaseResult {
+        let outcome = await purchaseHandler(product.productIdentifier)
+        switch outcome {
+        case .purchased, .restored:
+            // SuperwallKit 4.x's PurchaseResult has no restored case; a purchase
+            // completed via restoration still unlocks, so report it as purchased.
+            return .purchased
+        case .cancelled:
+            return .cancelled
+        case .pending:
+            return .pending
+        case .failed:
+            return .failed(NSError(
+                domain: "SkipSuperwall.purchase",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "The app's purchase handler reported failure."]
+            ))
+        }
+    }
+
+    @MainActor
+    func restorePurchases() async -> RestorationResult {
+        let restored = await restoreHandler()
+        return restored ? .restored : .failed(nil)
+    }
+}
+#endif
+#else
+/// Adapts the app-registered primitive-typed handlers to the Android SDK's
+/// `PurchaseController` interface.
+///
+/// `// SKIP @nobridge`: the signature mentions Android types (`Activity`,
+/// `ProductDetails`) that skip-fuse can't bridge; Android-internal only.
+// SKIP @nobridge
+final class SkipSuperwallPurchaseController: PurchaseController {
+    // The `activity` param is deliberately unused: the app's handler obtains the
+    // current Activity itself, from the same source SkipSuperwallActivityProvider
+    // uses. `override` is emitted only for Android (skipstone can't infer it from
+    // the external Kotlin interface); this block never reaches the Swift compiler.
+    public override func purchase(activity: Activity,
+                                  productDetails: ProductDetails,
+                                  basePlanId: String?,
+                                  offerId: String?) async -> PurchaseResult {
+        guard let handler = SuperwallPurchaseHandlers.shared.purchaseFromGooglePlay else {
+            return PurchaseResult.Failed("SkipSuperwall: no Google Play purchase handler registered")
+        }
+        let outcome = await handler(productDetails.productId, basePlanId, offerId)
+        switch outcome {
+        case .purchased, .restored:
+            // superwall-android 2.7.x's PurchaseResult has no restored case; a
+            // purchase completed via restoration still unlocks, so report purchased.
+            return PurchaseResult.Purchased()
+        case .cancelled:
+            return PurchaseResult.Cancelled()
+        case .pending:
+            return PurchaseResult.Pending()
+        case .failed:
+            return PurchaseResult.Failed("The app's purchase handler reported failure.")
+        }
+    }
+
+    public override func restorePurchases() async -> RestorationResult {
+        guard let handler = SuperwallPurchaseHandlers.shared.restorePurchases else {
+            return RestorationResult.Failed(nil)
+        }
+        let restored = await handler()
+        return restored ? RestorationResult.Restored() : RestorationResult.Failed(nil)
+    }
+}
+#endif
+
 // MARK: - SuperwallManager
 
 /// Cross-platform wrapper around the native Superwall paywall SDKs.
@@ -50,13 +177,18 @@ let logger: Logger = Logger(subsystem: "skip.superwall", category: "SuperwallMan
 ///
 /// Superwall presents its own paywalls (a dedicated window on iOS, a
 /// `SuperwallPaywallActivity` on Android), so ``register(placement:params:feature:)``
-/// needs no host view controller from the caller. With no `PurchaseController`
-/// supplied at ``configure(apiKey:)``, Superwall handles StoreKit / Billing and
-/// subscription status automatically.
+/// needs no host view controller from the caller. By default Superwall handles
+/// StoreKit / Billing and subscription status automatically; alternatively, call
+/// ``setPurchaseController(purchaseFromAppStore:purchaseFromGooglePlay:restorePurchases:)``
+/// before ``configure(apiKey:)`` to delegate purchases and restores to the app,
+/// then keep Superwall's status in sync via
+/// ``setSubscriptionStatus(activeEntitlements:)``.
 ///
 /// Typical lifecycle:
 /// ```swift
+/// SuperwallManager.shared.setPurchaseController(…)           // optional; before configure
 /// SuperwallManager.shared.configure(apiKey: "pk_…")          // once, at launch
+/// SuperwallManager.shared.setSubscriptionStatus(activeEntitlements: ["pro"])
 /// SuperwallManager.shared.identify(userID: "uid123")         // after sign-in
 /// SuperwallManager.shared.setUserAttributes(["plan": "free"])
 /// SuperwallManager.shared.register(placement: "campaign_trigger") {
@@ -88,7 +220,10 @@ public struct SuperwallManager: @unchecked Sendable {
 
     /// Configure Superwall with the public API key from the dashboard.
     /// Idempotent — a second call is ignored. Call once early in app launch,
-    /// before any ``register(placement:params:feature:)``.
+    /// before any ``register(placement:params:feature:)``. If purchase handlers
+    /// were registered via
+    /// ``setPurchaseController(purchaseFromAppStore:purchaseFromGooglePlay:restorePurchases:)``,
+    /// the platform purchase-controller adapter is installed here.
     public func configure(apiKey: String) {
         guard !isConfigured else {
             logger.info("configure skipped — Superwall is already configured")
@@ -96,14 +231,93 @@ public struct SuperwallManager: @unchecked Sendable {
         }
         #if !SKIP
         #if canImport(SuperwallKit)
-        Superwall.configure(apiKey: apiKey)
+        let handlers = SuperwallPurchaseHandlers.shared
+        if let purchase = handlers.purchaseFromAppStore, let restore = handlers.restorePurchases {
+            Superwall.configure(
+                apiKey: apiKey,
+                purchaseController: AppPurchaseControllerAdapter(purchaseHandler: purchase, restoreHandler: restore)
+            )
+        } else {
+            Superwall.configure(apiKey: apiKey)
+        }
         #endif
         #else
         // Android `configure` needs an `Application` and an activity provider (see
-        // SkipSuperwallActivityProvider). The two nils are purchaseController/options.
+        // SkipSuperwallActivityProvider). The remaining nil is options.
         let context = ProcessInfo.processInfo.androidContext
         let application = context.applicationContext as! Application
-        Superwall.configure(application, apiKey, nil, nil, SkipSuperwallActivityProvider())
+        let purchaseController: PurchaseController? = SuperwallPurchaseHandlers.shared.isRegistered
+            ? SkipSuperwallPurchaseController()
+            : nil
+        Superwall.configure(application, apiKey, purchaseController, nil, SkipSuperwallActivityProvider())
+        #endif
+    }
+
+    /// Register the app's purchase handlers so Superwall delegates purchases and
+    /// restores to the app instead of running StoreKit / Play Billing itself.
+    ///
+    /// Must be called **before** ``configure(apiKey:)`` — both native SDKs only
+    /// accept a purchase controller at configure time; calling this afterwards
+    /// logs a warning and has no effect on the running SDK. Once registered, the
+    /// app is also responsible for pushing entitlement state via
+    /// ``setSubscriptionStatus(activeEntitlements:)``.
+    ///
+    /// Handlers are primitive-typed so they bridge; only the platform-relevant
+    /// purchase handler is invoked. A ``SuperwallPurchaseOutcome/restored``
+    /// outcome is reported to Superwall as a completed purchase (neither native
+    /// SDK models restored purchase results at the pinned versions).
+    ///
+    /// - Parameters:
+    ///   - purchaseFromAppStore: Purchase the App Store product with the given
+    ///     product identifier.
+    ///   - purchaseFromGooglePlay: Purchase the Google Play product with the
+    ///     given product ID, optional base plan ID, and optional offer ID.
+    ///   - restorePurchases: Restore purchases, returning whether restoration
+    ///     completed without error.
+    public func setPurchaseController(
+        purchaseFromAppStore: @escaping (String) async -> SuperwallPurchaseOutcome,
+        purchaseFromGooglePlay: @escaping (String, String?, String?) async -> SuperwallPurchaseOutcome,
+        restorePurchases: @escaping () async -> Bool
+    ) {
+        if isConfigured {
+            logger.warning("setPurchaseController called after configure — the native SDKs only accept a purchase controller at configure time, so this has no effect")
+        }
+        let handlers = SuperwallPurchaseHandlers.shared
+        handlers.purchaseFromAppStore = purchaseFromAppStore
+        handlers.purchaseFromGooglePlay = purchaseFromGooglePlay
+        handlers.restorePurchases = restorePurchases
+    }
+
+    /// Push the app's entitlement state into Superwall (e.g. the active
+    /// RevenueCat entitlement identifiers after every customer-info refresh).
+    /// An empty array marks the subscription inactive.
+    /// While unconfigured this is a safe no-op.
+    public func setSubscriptionStatus(activeEntitlements: [String]) {
+        guard isConfigured else {
+            logger.warning("setSubscriptionStatus skipped — Superwall is not configured")
+            return
+        }
+        #if !SKIP
+        #if canImport(SuperwallKit)
+        if activeEntitlements.isEmpty {
+            Superwall.shared.subscriptionStatus = .inactive
+        } else {
+            Superwall.shared.subscriptionStatus = .active(Set(activeEntitlements.map { Entitlement(id: $0) }))
+        }
+        #endif
+        #else
+        if activeEntitlements.isEmpty {
+            Superwall.instance.setSubscriptionStatus(SubscriptionStatus.Inactive)
+        } else {
+            // Built as a Kotlin set directly — `SubscriptionStatus.Active` wants
+            // `Set<Entitlement>`, and `.kotlin()` on a Swift collection would be
+            // star-projected.
+            let entitlementSet = LinkedHashSet<Entitlement>()
+            for id in activeEntitlements {
+                entitlementSet.add(Entitlement(id))
+            }
+            Superwall.instance.setSubscriptionStatus(SubscriptionStatus.Active(entitlementSet))
+        }
         #endif
     }
 
