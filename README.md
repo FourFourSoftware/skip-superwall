@@ -55,8 +55,10 @@ declare Superwall's paywall activity (per the Superwall Android quickstart):
 
 Confirmed against real iOS (Xcode) and Android (Gradle) builds:
 
-- The SuperwallKit iOS SPM product (`SuperwallKit`, `Package.swift`,
-  `from: 4.0.0`).
+- The SuperwallKit SPM product (`SuperwallKit`, `Package.swift`), pinned to
+  the head of [superwall/Superwall-iOS#548](https://github.com/superwall/Superwall-iOS/pull/548)
+  for native macOS support. `swift build` on a macOS host now compiles the
+  wrapper against the real SuperwallKit instead of the no-op fallback.
 - The Superwall Android Maven artifact (`Skip/skip.yml`,
   `com.superwall.sdk:superwall-android:2.7.20`) — the `com.superwall.sdk.Superwall`
   symbols match (`configure`, `instance.register`, `identify`,

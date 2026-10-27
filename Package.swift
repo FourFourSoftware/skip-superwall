@@ -19,19 +19,21 @@ let package = Package(
         .package(url: "https://source.skip.tools/skip.git", from: "1.7.4"),
         .package(url: "https://source.skip.tools/skip-foundation.git", from: "1.0.0"),
         .package(url: "https://source.skip.tools/skip-ui.git", from: "1.0.0"),
-        // Superwall iOS SDK (SwiftPM product `SuperwallKit`). iOS-only —
-        // SuperwallKit imports UIKit unconditionally, so it does not build on
-        // macOS; the wrapper gates its use behind `#if canImport(SuperwallKit)`.
+        // Superwall iOS SDK (SwiftPM product `SuperwallKit`), used on iOS and
+        // native macOS. Released 4.x imports UIKit unconditionally and does not
+        // build on macOS, so this pins the head of superwall/Superwall-iOS#548
+        // (`brian/native-macos`, AppKit support for macOS 12+). Switch back to
+        // a version requirement once that PR ships in a release. The wrapper
+        // still gates its use behind `#if canImport(SuperwallKit)`.
         // Android pulls the `com.superwall.sdk:superwall-android` Maven artifact
-        // via Sources/SkipSuperwall/Skip/skip.yml. `from: "4.0.0"` tracks the
-        // current 4.x line.
-        .package(url: "https://github.com/superwall/Superwall-iOS.git", from: "4.0.0"),
+        // via Sources/SkipSuperwall/Skip/skip.yml.
+        .package(url: "https://github.com/superwall/Superwall-iOS.git", revision: "d17752af85c9f035b9a52ba0114d0c69df34e0d0"),
     ],
     targets: [
         .target(name: "SkipSuperwall", dependencies: [
             .product(name: "SkipFoundation", package: "skip-foundation"),
             .product(name: "SkipUI", package: "skip-ui"),
-            .product(name: "SuperwallKit", package: "Superwall-iOS", condition: .when(platforms: [.iOS])),
+            .product(name: "SuperwallKit", package: "Superwall-iOS", condition: .when(platforms: [.iOS, .macOS])),
         ], plugins: [.plugin(name: "skipstone", package: "skip")]),
         .testTarget(name: "SkipSuperwallTests", dependencies: [
             "SkipSuperwall",
