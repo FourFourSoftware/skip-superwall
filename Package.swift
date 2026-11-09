@@ -20,14 +20,12 @@ let package = Package(
         .package(url: "https://source.skip.tools/skip-foundation.git", from: "1.0.0"),
         .package(url: "https://source.skip.tools/skip-ui.git", from: "1.0.0"),
         // Superwall iOS SDK (SwiftPM product `SuperwallKit`), used on iOS and
-        // native macOS. Released 4.x imports UIKit unconditionally and does not
-        // build on macOS, so this pins the head of superwall/Superwall-iOS#548
-        // (`brian/native-macos`, AppKit support for macOS 12+). Switch back to
-        // a version requirement once that PR ships in a release. The wrapper
+        // native macOS. 4.19.0 is the first release with AppKit support
+        // (macOS 12+); earlier 4.x imports UIKit unconditionally. The wrapper
         // still gates its use behind `#if canImport(SuperwallKit)`.
         // Android pulls the `com.superwall.sdk:superwall-android` Maven artifact
         // via Sources/SkipSuperwall/Skip/skip.yml.
-        .package(url: "https://github.com/superwall/Superwall-iOS.git", revision: "d17752af85c9f035b9a52ba0114d0c69df34e0d0"),
+        .package(url: "https://github.com/superwall/Superwall-iOS.git", from: "4.19.0"),
     ],
     targets: [
         .target(name: "SkipSuperwall", dependencies: [
