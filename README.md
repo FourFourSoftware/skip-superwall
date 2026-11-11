@@ -32,6 +32,12 @@ SuperwallManager.shared.register(placement:params:feature:)    // @MainActor
 SuperwallManager.shared.reset()                                // on sign-out
 ```
 
+On native macOS, `register` uses the dashboard's presentation style, so a
+Fullscreen paywall covers the whole window. To show it as a sheet instead,
+present `SuperwallPaywallSheet(placement:params:onDismiss:onEntitled:)` in the
+app's own `.sheet` (macOS only; `onEntitled` follows `register`'s `feature`
+semantics).
+
 Superwall presents its own paywalls (a dedicated window on iOS, a
 `SuperwallPaywallActivity` on Android), so `register` needs no host view
 controller. With no `PurchaseController` passed to `configure`, Superwall
@@ -55,8 +61,10 @@ declare Superwall's paywall activity (per the Superwall Android quickstart):
 
 Confirmed against real iOS (Xcode) and Android (Gradle) builds:
 
-- The SuperwallKit iOS SPM product (`SuperwallKit`, `Package.swift`,
-  `from: 4.0.0`).
+- The SuperwallKit SPM product (`SuperwallKit`, `Package.swift`,
+  `from: 4.19.0`, the first release with native macOS support). `swift build`
+  on a macOS host compiles the wrapper against the real SuperwallKit instead
+  of the no-op fallback.
 - The Superwall Android Maven artifact (`Skip/skip.yml`,
   `com.superwall.sdk:superwall-android:2.7.20`) — the `com.superwall.sdk.Superwall`
   symbols match (`configure`, `instance.register`, `identify`,

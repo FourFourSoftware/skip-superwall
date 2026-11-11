@@ -1,5 +1,8 @@
 import XCTest
 @testable import SkipSuperwall
+#if !SKIP && os(macOS) && canImport(SuperwallKit)
+import SuperwallKit
+#endif
 
 final class SkipSuperwallTests: XCTestCase {
     /// The shared instance is a stable singleton. Configuration / register /
@@ -113,4 +116,14 @@ final class SkipSuperwallTests: XCTestCase {
         manager.setSubscriptionStatus(activeEntitlements: [])
         XCTAssertFalse(manager.isConfigured)
     }
+
+    #if !SKIP && os(macOS) && canImport(SuperwallKit)
+    /// The Mac sheet must grant the feature exactly when `register` would.
+    func testPaywallSheetGrantsAccessLikeRegister() {
+        XCTAssertTrue(SuperwallPaywallSheet.grantsAccess(.restored, closeReason: .systemLogic, featureGating: .gated))
+        XCTAssertFalse(SuperwallPaywallSheet.grantsAccess(.declined, closeReason: .manualClose, featureGating: .gated))
+        XCTAssertTrue(SuperwallPaywallSheet.grantsAccess(.declined, closeReason: .manualClose, featureGating: .nonGated))
+        XCTAssertFalse(SuperwallPaywallSheet.grantsAccess(.declined, closeReason: .forNextPaywall, featureGating: .nonGated))
+    }
+    #endif
 }
